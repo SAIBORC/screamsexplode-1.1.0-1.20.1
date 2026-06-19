@@ -12,8 +12,14 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ScreamsExplodeClient implements ClientModInitializer {
+
+    private static volatile boolean micRunning = false;
+    private static volatile TargetDataLine micLine = null;
+    private static Thread micThread = null;
 
     private static void log(String msg) {
         try (PrintWriter out = new PrintWriter(new FileWriter("screamsexplode_debug.log", true))) {
@@ -34,34 +40,53 @@ public class ScreamsExplodeClient implements ClientModInitializer {
             }
         });
 
-        startMicCapture();
+        startCaptureThread();
     }
 
-    private void startMicCapture() {
+    public static void restartMicCapture() {
+        log("Restarting mic capture...");
+        micRunning = false;
+        Thread oldThread = micThread;
+        TargetDataLine oldLine = micLine;
+        micThread = null;
+        micLine = null;
+        if (oldThread != null) {
+            oldThread.interrupt();
+            if (oldLine != null) {
+                oldLine.close();
+            }
+            try { oldThread.join(1000); } catch (InterruptedException ignored) {}
+        }
+        startCaptureThread();
+    }
+
+    private static void startCaptureThread() {
         Thread t = new Thread(() -> {
             try {
                 AudioFormat format = new AudioFormat(48000.0f, 16, 1, true, false);
                 DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-                if (!AudioSystem.isLineSupported(info)) {
+
+                TargetDataLine mic = tryOpenMic(info, format);
+                if (mic == null) {
                     log("48000 Hz not supported, trying 44100");
                     format = new AudioFormat(44100.0f, 16, 1, true, false);
                     info = new DataLine.Info(TargetDataLine.class, format);
-                    if (!AudioSystem.isLineSupported(info)) {
-                        log("NO MIC LINE SUPPORTED - mic won't work");
+                    mic = tryOpenMic(info, format);
+                    if (mic == null) {
+                        log("NO MIC LINE SUPPORTED");
                         return;
                     }
                 }
 
-                TargetDataLine mic = (TargetDataLine) AudioSystem.getLine(info);
-                mic.open(format);
-                mic.start();
-                log("Mic opened: " + format.getSampleRate() + "Hz " + format.getSampleSizeInBits() + "bit " + (format.isBigEndian() ? "BE" : "LE"));
+                micLine = mic;
+                micRunning = true;
+                log("Mic format: " + format.getSampleRate() + "Hz " + format.getSampleSizeInBits() + "bit " + (format.isBigEndian() ? "BE" : "LE"));
 
                 int frameSize = 960;
                 byte[] buffer = new byte[frameSize * 2];
                 short[] pcm = new short[frameSize];
 
-                while (!Thread.interrupted()) {
+                while (!Thread.interrupted() && micRunning) {
                     int bytesRead = mic.read(buffer, 0, buffer.length);
                     if (bytesRead < buffer.length) continue;
 
@@ -97,13 +122,80 @@ public class ScreamsExplodeClient implements ClientModInitializer {
                     }
                 }
 
-                mic.close();
+                micRunning = false;
+                if (micLine != null) {
+                    micLine.close();
+                    micLine = null;
+                }
             } catch (Exception e) {
+                micRunning = false;
                 log("Mic capture error: " + e.getClass().getName() + ": " + e.getMessage());
                 try (PrintWriter pw = new PrintWriter(new FileWriter("screamsexplode_debug.log", true))) { e.printStackTrace(pw); } catch (Exception ignored) {}
             }
         }, "ScreamDetect");
+        micThread = t;
         t.setDaemon(true);
         t.start();
+    }
+
+    public static List<Mixer.Info> getAvailableMics() {
+        List<Mixer.Info> result = new ArrayList<>();
+        for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+            try {
+                Mixer mixer = AudioSystem.getMixer(mi);
+                Line.Info[] lines = mixer.getTargetLineInfo();
+                for (Line.Info li : lines) {
+                    if (li.getLineClass() == TargetDataLine.class) {
+                        result.add(mi);
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return result;
+    }
+
+    public static String getCurrentMicName() {
+        ModConfig config = ModConfig.get();
+        if (config.selectedMicName != null && !config.selectedMicName.isEmpty()) {
+            return config.selectedMicName;
+        }
+        return "Default";
+    }
+
+    private static TargetDataLine tryOpenMic(DataLine.Info info, AudioFormat format) {
+        ModConfig config = ModConfig.get();
+        String selectedName = config.selectedMicName;
+
+        if (selectedName != null && !selectedName.isEmpty()) {
+            for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+                try {
+                    Mixer mixer = AudioSystem.getMixer(mi);
+                    if (mi.getName().equals(selectedName) && mixer.isLineSupported(info)) {
+                        TargetDataLine line = (TargetDataLine) mixer.getLine(info);
+                        line.open(format);
+                        line.start();
+                        log("Opened mic: " + mi.getName());
+                        return line;
+                    }
+                } catch (Exception ignored) {}
+            }
+            log("Selected mic '" + selectedName + "' not found, using default");
+            config.selectedMicName = null;
+            ModConfig.save();
+        }
+
+        if (AudioSystem.isLineSupported(info)) {
+            try {
+                TargetDataLine line = (TargetDataLine) AudioSystem.getLine(info);
+                line.open(format);
+                line.start();
+                log("Opened default mic");
+                return line;
+            } catch (Exception e) {
+                log("Failed to open default mic: " + e.getMessage());
+            }
+        }
+        return null;
     }
 }

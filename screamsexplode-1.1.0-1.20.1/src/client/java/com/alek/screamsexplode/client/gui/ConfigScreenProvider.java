@@ -1,5 +1,6 @@
 package com.alek.screamsexplode.client.gui;
 
+import com.alek.screamsexplode.client.ScreamsExplodeClient;
 import com.alek.screamsexplode.config.ModConfig;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -7,6 +8,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+
+import javax.sound.sampled.Mixer;
+import java.util.List;
 
 public class ConfigScreenProvider {
     private static final Identifier FUNDDDR_TEXTURE = new Identifier("screamsexplode", "textures/gui/fundddr.png");
@@ -17,9 +21,10 @@ public class ConfigScreenProvider {
             protected void init() {
                 super.init();
                 ModConfig config = ModConfig.get();
+                List<Mixer.Info> mics = ScreamsExplodeClient.getAvailableMics();
 
                 int centreX = width / 2;
-                int y = height / 2 - 40;
+                int y = height / 2 - 55;
 
                 ButtonWidget toggleBtn = ButtonWidget.builder(
                         Text.literal(config.enabled ? "Enabled" : "Disabled"),
@@ -50,6 +55,35 @@ public class ConfigScreenProvider {
                 };
 
                 addDrawableChild(thresholdSlider);
+
+                ButtonWidget micBtn = ButtonWidget.builder(
+                        Text.literal(formatMicName(ScreamsExplodeClient.getCurrentMicName())),
+                        btn -> {
+                            if (mics.isEmpty()) return;
+                            int idx = findMicIndex(mics, config.selectedMicName);
+                            int nextIdx = (idx + 1) % mics.size();
+                            config.selectedMicName = mics.get(nextIdx).getName();
+                            ModConfig.save();
+                            btn.setMessage(Text.literal(formatMicName(config.selectedMicName)));
+                            ScreamsExplodeClient.restartMicCapture();
+                        }
+                ).dimensions(centreX - 75, y + 60, 150, 20).build();
+
+                addDrawableChild(micBtn);
+            }
+
+            private int findMicIndex(List<Mixer.Info> mics, String name) {
+                if (name == null) return 0;
+                for (int i = 0; i < mics.size(); i++) {
+                    if (mics.get(i).getName().equals(name)) return i;
+                }
+                return 0;
+            }
+
+            private String formatMicName(String name) {
+                if (name == null || name.isEmpty()) return "Mic: Default";
+                String shortName = name.length() > 28 ? name.substring(0, 25) + "..." : name;
+                return "Mic: " + shortName;
             }
 
             @Override
@@ -60,7 +94,8 @@ public class ConfigScreenProvider {
                 context.drawTexture(FUNDDDR_TEXTURE, width / 2 - imgSize / 2, 40, 0, 0, imgSize, imgSize, imgSize, imgSize);
 
                 context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 130, 0xFFFFFF);
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal("Louder scream = lower threshold"), width / 2, height / 2 + 20, 0x808080);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal("Louder scream = lower threshold"), width / 2, height / 2 + 25, 0x808080);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal("Click mic button to cycle devices"), width / 2, height / 2 + 37, 0x606060);
 
                 long time = System.currentTimeMillis();
                 int rainbow = java.awt.Color.HSBtoRGB((time % 3000) / 3000f, 1f, 1f);

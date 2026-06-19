@@ -18,6 +18,7 @@ public class ModConfig {
     public volatile double threshold = 0.7;
     public volatile int cooldownMs = 5000;
     public volatile float explosionPower = 3.0F;
+    public volatile String selectedMicName = null;
 
     public static ModConfig get() {
         return instance;

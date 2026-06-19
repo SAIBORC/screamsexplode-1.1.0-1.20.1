@@ -1,0 +1,29 @@
+{
+    "schemaVersion": 1,
+    "id": "screamsexplode",
+    "version": "${version}",
+    "name": "Screams Explode",
+    "description": "Scream into your mic to explode in-game!",
+    "authors": ["Alek"],
+    "contact": {
+        "homepage": "https://github.com/alek/screamsexplode",
+        "sources": "https://github.com/alek/screamsexplode"
+    },
+    "license": "MIT",
+    "icon": "assets/screamsexplode/icon.png",
+    "environment": "*",
+    "entrypoints": {
+        "main": ["com.alek.screamsexplode.ScreamsExplodeMod"],
+        "client": ["com.alek.screamsexplode.client.ScreamsExplodeClient"],
+        "modmenu": ["com.alek.screamsexplode.client.gui.ModMenuIntegration"]
+    },
+    "depends": {
+        "fabricloader": ">=0.19.3",
+        "minecraft": "~1.20.1",
+        "java": ">=17",
+        "fabric-api": "*"
+    },
+    "suggests": {
+        "modmenu": "*"
+    }
+}

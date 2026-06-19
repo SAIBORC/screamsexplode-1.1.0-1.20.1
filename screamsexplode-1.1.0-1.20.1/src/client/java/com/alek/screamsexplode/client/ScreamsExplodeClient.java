@@ -20,6 +20,10 @@ public class ScreamsExplodeClient implements ClientModInitializer {
     private static volatile boolean micRunning = false;
     private static volatile TargetDataLine micLine = null;
     private static Thread micThread = null;
+    private static volatile float currentSampleRate = 48000;
+    private static volatile int currentBits = 16;
+
+    private static final float[] RATES = {192000, 176400, 96000, 88200, 48000, 44100, 22050, 11025};
 
     private static void log(String msg) {
         try (PrintWriter out = new PrintWriter(new FileWriter("screamsexplode_debug.log", true))) {
@@ -63,37 +67,57 @@ public class ScreamsExplodeClient implements ClientModInitializer {
     private static void startCaptureThread() {
         Thread t = new Thread(() -> {
             try {
-                AudioFormat format = new AudioFormat(48000.0f, 16, 1, true, false);
-                DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+                TargetDataLine mic = null;
+                AudioFormat chosenFormat = null;
 
-                TargetDataLine mic = tryOpenMic(info, format);
-                if (mic == null) {
-                    log("48000 Hz not supported, trying 44100");
-                    format = new AudioFormat(44100.0f, 16, 1, true, false);
-                    info = new DataLine.Info(TargetDataLine.class, format);
-                    mic = tryOpenMic(info, format);
-                    if (mic == null) {
-                        log("NO MIC LINE SUPPORTED");
-                        return;
-                    }
+                for (float rate : RATES) {
+                    AudioFormat fmt16 = new AudioFormat(rate, 16, 1, true, false);
+                    DataLine.Info info16 = new DataLine.Info(TargetDataLine.class, fmt16);
+                    mic = tryOpenMic(info16, fmt16);
+                    if (mic != null) { chosenFormat = fmt16; break; }
+
+                    AudioFormat fmt16be = new AudioFormat(rate, 16, 1, true, true);
+                    DataLine.Info info16be = new DataLine.Info(TargetDataLine.class, fmt16be);
+                    mic = tryOpenMic(info16be, fmt16be);
+                    if (mic != null) { chosenFormat = fmt16be; break; }
+
+                    AudioFormat fmt8 = new AudioFormat(rate, 8, 1, false, false);
+                    DataLine.Info info8 = new DataLine.Info(TargetDataLine.class, fmt8);
+                    mic = tryOpenMic(info8, fmt8);
+                    if (mic != null) { chosenFormat = fmt8; break; }
                 }
+
+                if (mic == null) {
+                    log("NO MIC LINE SUPPORTED");
+                    return;
+                }
+
+                currentSampleRate = chosenFormat.getSampleRate();
+                currentBits = chosenFormat.getSampleSizeInBits();
 
                 micLine = mic;
                 micRunning = true;
-                log("Mic format: " + format.getSampleRate() + "Hz " + format.getSampleSizeInBits() + "bit " + (format.isBigEndian() ? "BE" : "LE"));
+                log("Mic format: " + currentSampleRate + "Hz " + currentBits + "bit");
 
                 int frameSize = 960;
-                byte[] buffer = new byte[frameSize * 2];
+                int bytesPerSample = currentBits / 8;
+                byte[] buffer = new byte[frameSize * bytesPerSample];
                 short[] pcm = new short[frameSize];
 
                 while (!Thread.interrupted() && micRunning) {
                     int bytesRead = mic.read(buffer, 0, buffer.length);
                     if (bytesRead < buffer.length) continue;
 
-                    for (int i = 0; i < frameSize; i++) {
-                        int low = buffer[i * 2] & 0xFF;
-                        int high = buffer[i * 2 + 1] << 8;
-                        pcm[i] = (short) (high | low);
+                    if (currentBits == 16) {
+                        for (int i = 0; i < frameSize; i++) {
+                            int low = buffer[i * 2] & 0xFF;
+                            int high = buffer[i * 2 + 1] << 8;
+                            pcm[i] = (short) (high | low);
+                        }
+                    } else {
+                        for (int i = 0; i < frameSize; i++) {
+                            pcm[i] = (short) ((buffer[i] & 0xFF) - 128);
+                        }
                     }
 
                     ModConfig config = ModConfig.get();
@@ -102,9 +126,10 @@ public class ScreamsExplodeClient implements ClientModInitializer {
                     double threshold = config.threshold;
                     double sum = 0;
                     int peakCount = 0;
+                    double norm = (currentBits == 16) ? 32767.0 : 127.0;
 
                     for (short sample : pcm) {
-                        double normalized = Math.abs(sample) / 32767.0;
+                        double normalized = Math.abs(sample) / norm;
                         sum += normalized;
                         if (normalized > threshold) peakCount++;
                     }

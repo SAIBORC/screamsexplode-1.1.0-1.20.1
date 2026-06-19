@@ -32,6 +32,7 @@ MIT
 
 
 
-<img width="1280" height="800" alt="2026-06-19_13 16 14_2" src="https://github.com/user-attachments/assets/740ecf2c-439c-4227-b537-400a1b899f0e" />
+
 <img width="1280" height="800" alt="2026-06-19_13 16 14" src="https://github.com/user-attachments/assets/5fba3ef9-f5df-49ff-9628-de94d830e3d2" />
+<img width="1280" height="800" alt="2026-06-19_13 16 14_2" src="https://github.com/user-attachments/assets/740ecf2c-439c-4227-b537-400a1b899f0e" />
 <img width="1280" height="800" alt="2026-06-19_13 16 14_3" src="https://github.com/user-attachments/assets/c4bbbc99-5973-4b2a-97bd-dcc62dc47c9f" />
